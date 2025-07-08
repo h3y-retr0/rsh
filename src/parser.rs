@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 
 
 /// Very naive and basic implementation of an HTTP parser.
@@ -5,7 +6,32 @@ pub struct Parser<'a> {
     method: Option<&'a str>,
     uri: Option<&'a str>,
     http_version: &'a str,
-    data: Option<String>,
+    data: Option<&'a str>,
+}
+
+pub struct HTTPRequest {
+    request_line: RequestLine,
+    headers: HTTPHeaders,
+    body: Option<String>,
+}
+
+pub struct RequestLine {
+    method: Method,
+    request_target: String,
+    http_version: String,
+}
+
+struct HTTPHeaders(HashMap<String, String>);
+
+pub enum Method {
+    GET,
+    POST,
+    HEAD,
+    OPTIONS,
+    DELETE,
+    PUT,
+    CONNECT,
+    TRACE,
 }
 
 /// An HTPP Request has the following structure we need to handle:
@@ -22,7 +48,7 @@ pub struct Parser<'a> {
 impl<'a> Parser<'a> {
     /// Creates and returns a new HTTP [`Parser`]
     /// by default it will use 1.1 as the HTTP version.
-    pub fn new(data: String) -> Self {
+    pub fn new(data: &'a str) -> Self {
         Self {
             method: None,
             uri: None,

@@ -1,4 +1,4 @@
-use std::net::{IpAddr, TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream, SocketAddr};
 use std::io::{Read, Write};
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
@@ -67,14 +67,10 @@ impl Server {
         Server { config }
     }
 
-    /// Returns the [`Server`] addr formated as host:port.
-    pub fn get_server_addr(&self) -> String {
-        format!("{}:{}", self.config.host, self.config.port)
-    }
-
     pub fn run(&self) -> Result<(), std::io::Error> {
-        let listener = TcpListener::bind(self.get_server_addr()).unwrap();
-        println!("Server listening on http://{}", self.get_server_addr());
+        let addr = SocketAddr::from((self.config.host, self.config.port));
+        let listener = TcpListener::bind(addr).unwrap();
+        println!("Server listening on http://{}", addr);
         for stream in listener.incoming() {
             let stream = stream.unwrap();
             
