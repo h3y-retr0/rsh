@@ -1,5 +1,7 @@
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::io::{Read, Write};
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
 
 
 pub(crate) struct Config {
@@ -18,6 +20,47 @@ pub(crate) struct Server {
 //    headers: String,
 //    content: Option<String>,
 // }
+
+// #[repr(u16)]
+// #[derive(Debug)]
+// pub enum HttpStatusCode {
+//     Continue = 100,
+//     Ok = 200,
+//     BadRequest = 400,
+//     Unauthorized = 401,
+//     NotFound = 404,
+//     InternalServerError = 500,
+    
+//     Other(u16),
+// }
+
+// impl From<u16> for HttpStatusCode {
+//     fn from (status_code: u16) -> Self {
+//         match status_code {
+//             100 => Self::Continue,
+//             200 => Self::Ok,
+//             400 => Self::BadRequest,
+//             401 => Self::Unauthorized,
+//             404 => Self::NotFound,
+//             500 => Self::InternalServerError,
+//             _ => Self::Other(status_code),
+            
+//         }
+//     }
+// }
+
+static HTTP_STATUS_CODE: Lazy<HashMap<u16, &'static str>> = Lazy::new(|| {
+    HashMap::from([
+        (100, "Continue"),
+        (200, "Ok"),
+        (400, "Bad Request"),
+        (401, "Unauthorized"),
+        (404, "Not Found"),
+        (500, "Internal Server Error"),
+    ])
+});
+
+
 
 impl Server {
     pub fn new(config: Config) -> Self {
@@ -60,8 +103,35 @@ impl Server {
         let _ = stream.flush();
     }
 
+    fn response_line(&self, status_code: u16) -> Option<String> {
+        // There might be a better implementation of this.
+        if let Some(txt) = HTTP_STATUS_CODE.get(&status_code) {
+            return Some(format!("HTTP/1.1 {} {}\r\n", status_code, txt));
+        }
+
+        None
+    }
+
+    /// Creates a new HTTP response.
+    /// An HTTP response has the following format:
+    /// 
+    /// HTTP/1.1 200 OK -> Response line
+    /// --------------- -> Response header
+    /// --------------- -> Response header
+    /// --------------- -> Response header
+    ///                 -> Blank line
+    /// <html><h1>Response body</h1></html>
+    /// 
+    /// Note that the \r\n characters are line break characters. They are present
+    /// at the end of every line in an HTTP response except on the body.
     fn create_response(&self, _data: Option<String>) -> Option<String>{
-        let status_line = "HTTP/1.1 200 OK\r\n";
+        let s_code = 200;
+        let line = self.response_line(s_code);
+        let status_line = if line.is_some() {
+            line.unwrap()
+        } else {
+            format!("HTTP/1.1 {} {}\r\n", 500, "Internal Server Error")
+        };
 
         let body = "<html><body><h1>Request received!</h1></body></html>";
 
@@ -74,6 +144,8 @@ impl Server {
             body.as_bytes().len()
         );
 
-        Some(format!("{status_line}{headers}{body}"))
+        let blank_line = "\r\n";
+
+        Some(format!("{status_line}{headers}{blank_line}{body}"))
     }
 }

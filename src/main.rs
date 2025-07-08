@@ -1,4 +1,5 @@
 pub mod server;
+pub mod parser;
 
 use self::server::{Server, Config};
 
