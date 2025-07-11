@@ -1,15 +1,5 @@
 use std::{collections::HashMap, io::{BufRead, BufReader, Read}, str::FromStr};
-
 use once_cell::sync::Lazy;
-
-
-/// Very naive and basic implementation of an HTTP parser.
-// pub struct Parser<'a> {
-//     method: Option<&'a str>,
-//     uri: Option<&'a str>,
-//     http_version: &'a str,
-//     data: Option<&'a str>,
-// }
 
 #[derive(Debug, Clone)]
 pub struct HTTPRequest {
@@ -56,13 +46,13 @@ static HTTP_STATUS_CODE: Lazy<HashMap<u16, &'static str>> = Lazy::new(|| {
 /// METHOD uri HTTP_VERSION -> Request line
 /// ----------------------- |
 /// ----------------------- |
-/// ----------------------- | -> Request headers 
+/// ----------------------- | -> Request headers
 /// ----------------------- |
 /// ----------------------- |
 ///                         -> Blank line that separates Header & Body
 /// Request message body
-/// 
-/// 
+///
+///
 
 impl FromStr for RequestLine {
     type Err = String;
@@ -72,16 +62,19 @@ impl FromStr for RequestLine {
         let method: Method = iterator
             .next()
             .ok_or("Failed to get HTTP method")?
+            .trim()
             .parse()?;
         let uri = iterator
             .next()
             .ok_or("Failed to get requet uri")?
+            .trim()
             .to_string();
         let http_version = iterator
             .next()
             .ok_or("Failed to get HTTP version")?
+            .trim()
             .to_string();
-        
+
         Ok(RequestLine { method, uri, http_version })
     }
 }
@@ -105,42 +98,6 @@ impl FromStr for Method {
     }
 }
 
-// impl<'a> Parser<'a> {
-//     /// Creates and returns a new HTTP [`Parser`]
-//     /// by default it will use 1.1 as the HTTP version.
-//     pub fn new(data: &'a str) -> Self {
-//         Self {
-//             method: None,
-//             uri: None,
-//             http_version: "1.1",
-//             data: Some(data),
-//         }
-//     }
-
-//     /// Parses the HTTP response.
-//     fn parse(&'a mut self) -> Result<(), std::io::Error> {
-        
-//         let lines: Vec<&str> = self.data.as_ref().unwrap().split("\r\n").collect();
-        
-//         let request_line = lines[0];
-
-//         let words: Vec<&str> = request_line.split(" ").collect();
-
-//         self.method = Some(words[0]);
-
-//         if words.len() > 1 {
-//             self.uri = Some(words[1]);
-//         }
-
-//         if words.len() > 2 {
-//             self.http_version = words[2];
-//         }
-        
-
-//         Ok(())
-//     }
-// }
-
 impl HTTPHeaders {
     pub fn new(iterator: &mut impl Iterator<Item = String>) -> Result<Self, String> {
         let mut headers = HashMap::new();
@@ -148,13 +105,36 @@ impl HTTPHeaders {
             if line.is_empty() {
                 break;
             }
+            // println!("line: {}", line);
 
             let mut line = line.split(':');
             let key = line.next().ok_or("Failed to get key")?.trim().to_string();
+            
+            let mut is_host_header = if key == "Host" {
+                true
+            } else {
+                false
+            };
+
             let value = line
                 .next()
                 .ok_or(format!("Failed to get value for key: {key}"))?
+                .trim()
                 .to_string();
+
+            if is_host_header {
+                // Handle Host header which is a special case since
+                // it contains ':'. So split() won't work as expected.
+                let port = line
+                    .next()
+                    .ok_or(format!("Failet to get port on host header"))?
+                    .to_string();    
+                
+                let complete_value = format!("{}:{}", value, port);
+                headers.insert(key, complete_value);
+                continue;
+            }
+
             headers.insert(key, value);
         }
         Ok(HTTPHeaders(headers))
@@ -212,18 +192,21 @@ impl FromStr for StatusLine {
         let http_version = iterator
             .next()
             .ok_or("Failed to get HTTP version")?
+            .trim()
             .to_string();
-        
+
         let status_code = iterator
             .next()
             .ok_or("Failed to get status code")?
+            .trim()
             .parse()?;
-        
+
         let status_data = iterator
             .next()
             .ok_or("Failed to get status data")?
+            .trim()
             .to_string();
-        
+
         Ok(StatusLine { http_version, status_code, status_data })
     }
 }
@@ -242,8 +225,9 @@ impl<R: Read> TryFrom<BufReader<R>> for HTTPResponse {
         let status_line: StatusLine = iterator
             .next()
             .ok_or("Failed to get status line")?
+            .trim()
             .parse()?;
-        
+
         let headers = HTTPHeaders::new(&mut iterator)?;
 
         let body = if iterator.peek().is_some() {
@@ -256,3 +240,94 @@ impl<R: Read> TryFrom<BufReader<R>> for HTTPResponse {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Cursor;
+
+    /// Helper method for testing
+    fn make_reader(lines: &[&str]) -> BufReader<Cursor<Vec<u8>>> {
+        let joined = lines.join("\r\n").into_bytes();
+        BufReader::new(Cursor::new(joined))
+    }
+
+    #[test]
+    fn parse_request_simple_get() {
+        let reader = make_reader(&[
+            "GET /uri HTTP/1.1",
+            "Host: mockhost:2020",
+            "User-Agent: mock_agent/0.0.0",
+            "Accept: */*",
+            "",
+        ]);
+
+        let req = HTTPRequest::try_from(reader).expect("parsing GET");
+
+        assert!(matches!(req.request_line.method, Method::GET));
+        assert_eq!(req.request_line.uri, "/uri");
+        assert_eq!(req.request_line.http_version, "HTTP/1.1");
+
+        // cabeceras
+        assert_eq!(
+            req.headers.0.get("Host").map(String::as_str),
+            Some("mockhost:2020")
+        );
+        // sin cuerpo
+        assert!(req.body.is_none());
+    }
+
+    #[test]
+    fn parse_request_post_with_body() {
+        let body = r#"field=valor&otro=2"#;
+        let content_length = body.len();
+        let reader = make_reader(&[
+            "POST /form HTTP/1.1",
+            "Host: x",
+            &format!("Content-Length: {content_length}"),
+            "",
+            body,
+        ]);
+
+        let req = HTTPRequest::try_from(reader).expect("parsing POST");
+
+        assert!(matches!(req.request_line.method, Method::POST));
+        assert_eq!(req.body.as_deref(), Some(body));
+    }
+
+    #[test]
+    fn request_invalid_method_fails() {
+        let reader = make_reader(&["BREW / ☕ HTTP/1.1", "", ""]);
+        assert!(HTTPRequest::try_from(reader).is_err());
+    }
+
+    // ------------ response tests ------------
+
+    #[test]
+    fn parse_response_ok() {
+        let reader = make_reader(&[
+            "HTTP/1.1 200 Ok",
+            "Content-Type: text/plain",
+            "",
+            "hola",
+        ]);
+
+        let res = HTTPResponse::try_from(reader).expect("parsing response");
+
+        assert_eq!(res.status_line.http_version, "HTTP/1.1");
+        assert_eq!(res.status_line.status_code.0, 200);
+        assert_eq!(res.status_line.status_data, "Ok");
+        assert_eq!(res.body.as_deref(), Some("hola"));
+    }
+
+    #[test]
+    fn response_without_body() {
+        let reader = make_reader(&[
+            "HTTP/1.1 204 No-Content",
+            "Date: hoy",
+            "",
+        ]);
+
+        let res = HTTPResponse::try_from(reader).expect("parsing 204");
+        assert!(res.body.is_none());
+    }
+}
