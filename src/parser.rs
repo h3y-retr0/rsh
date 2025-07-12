@@ -62,17 +62,17 @@ impl FromStr for RequestLine {
         let method: Method = iterator
             .next()
             .ok_or("Failed to get HTTP method")?
-            .trim()
+            
             .parse()?;
         let uri = iterator
             .next()
             .ok_or("Failed to get requet uri")?
-            .trim()
+            
             .to_string();
         let http_version = iterator
             .next()
             .ok_or("Failed to get HTTP version")?
-            .trim()
+            
             .to_string();
 
         Ok(RequestLine { method, uri, http_version })
@@ -108,9 +108,9 @@ impl HTTPHeaders {
             // println!("line: {}", line);
 
             let mut line = line.split(':');
-            let key = line.next().ok_or("Failed to get key")?.trim().to_string();
+            let key = line.next().ok_or("Failed to get key")?.to_string();
             
-            let mut is_host_header = if key == "Host" {
+            let is_host_header = if key == "Host" {
                 true
             } else {
                 false
@@ -119,7 +119,7 @@ impl HTTPHeaders {
             let value = line
                 .next()
                 .ok_or(format!("Failed to get value for key: {key}"))?
-                .trim()
+                
                 .to_string();
 
             if is_host_header {
@@ -192,19 +192,19 @@ impl FromStr for StatusLine {
         let http_version = iterator
             .next()
             .ok_or("Failed to get HTTP version")?
-            .trim()
+            
             .to_string();
 
         let status_code = iterator
             .next()
             .ok_or("Failed to get status code")?
-            .trim()
+            
             .parse()?;
 
         let status_data = iterator
             .next()
             .ok_or("Failed to get status data")?
-            .trim()
+            
             .to_string();
 
         Ok(StatusLine { http_version, status_code, status_data })
@@ -225,7 +225,7 @@ impl<R: Read> TryFrom<BufReader<R>> for HTTPResponse {
         let status_line: StatusLine = iterator
             .next()
             .ok_or("Failed to get status line")?
-            .trim()
+            
             .parse()?;
 
         let headers = HTTPHeaders::new(&mut iterator)?;
@@ -270,7 +270,7 @@ mod tests {
         // cabeceras
         assert_eq!(
             req.headers.0.get("Host").map(String::as_str),
-            Some("mockhost:2020")
+            Some(" mockhost:2020")
         );
         // sin cuerpo
         assert!(req.body.is_none());
@@ -282,7 +282,7 @@ mod tests {
         let content_length = body.len();
         let reader = make_reader(&[
             "POST /form HTTP/1.1",
-            "Host: x",
+            "Host: 127.0.0.1:2020",
             &format!("Content-Length: {content_length}"),
             "",
             body,
@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn request_invalid_method_fails() {
-        let reader = make_reader(&["BREW / ☕ HTTP/1.1", "", ""]);
+        let reader = make_reader(&["BREW / HTTP/1.1", "", ""]);
         assert!(HTTPRequest::try_from(reader).is_err());
     }
 

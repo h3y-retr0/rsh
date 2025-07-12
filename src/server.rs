@@ -1,7 +1,9 @@
 use std::net::{IpAddr, TcpListener, TcpStream, SocketAddr};
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Cursor, Read, Write};
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
+
+use crate::parser::HTTPRequest;
 
 
 pub(crate) struct Config {
@@ -30,7 +32,7 @@ pub(crate) struct Server {
 //     Unauthorized = 401,
 //     NotFound = 404,
 //     InternalServerError = 500,
-    
+
 //     Other(u16),
 // }
 
@@ -44,21 +46,10 @@ pub(crate) struct Server {
 //             404 => Self::NotFound,
 //             500 => Self::InternalServerError,
 //             _ => Self::Other(status_code),
-            
+
 //         }
 //     }
 // }
-
-static HTTP_STATUS_CODE: Lazy<HashMap<u16, &'static str>> = Lazy::new(|| {
-    HashMap::from([
-        (100, "Continue"),
-        (200, "Ok"),
-        (400, "Bad Request"),
-        (401, "Unauthorized"),
-        (404, "Not Found"),
-        (500, "Internal Server Error"),
-    ])
-});
 
 
 
@@ -69,25 +60,38 @@ impl Server {
 
     pub fn run(&self) -> Result<(), std::io::Error> {
         let addr = SocketAddr::from((self.config.host, self.config.port));
-        let listener = TcpListener::bind(addr).unwrap();
-        println!("Server listening on http://{}", addr);
-        for stream in listener.incoming() {
-            let stream = stream.unwrap();
-            
-            self.handle_conection(stream); 
-        }
+        let listener = TcpListener::bind(addr)?;
 
+        println!("Server listening on http://{}", addr);
+
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => self.handle_conection(stream),
+                Err(err) => eprintln!("Failed to accept connection: {err}"),
+            }
+        }
+        
         Ok(())
     }
+ 
 
     fn handle_conection(&self, mut stream: TcpStream) {
-        println!("{:?}", stream);
+        println!("New connection -> {:?}", stream);
 
-        let mut buffer = [0u8; 1024];
-        if let Err(e) = stream.read(&mut buffer) {
-            eprintln!("Error reading the request: {e}");
-            return;
-        }
+        let unparsed_http_request: Vec<String> = BufReader::new(&stream)
+            .lines()
+            .map(|result| result.unwrap())
+            .take_while(|line| !line.is_empty())
+            .collect();
+        
+        println!("{:?}", unparsed_http_request);
+        // TODO: Refactor `parser` to use Vec<T> instead of BufRead<T>.
+        let cur = Cursor::new(unparsed_http_request.join("\r\n").into_bytes());
+
+        let reader = BufReader::new(cur);
+        
+        let req = HTTPRequest::try_from(reader).unwrap();
+        println!("{:?}", req);
 
         if let Some(response) = self.create_response(None) {
             if let Err(e) = stream.write_all(response.as_bytes()) {
@@ -100,24 +104,22 @@ impl Server {
     }
 
     fn response_line(&self, status_code: u16) -> Option<String> {
-        // There might be a better implementation of this.
-        if let Some(txt) = HTTP_STATUS_CODE.get(&status_code) {
-            return Some(format!("HTTP/1.1 {} {}\r\n", status_code, txt));
-        }
+    
+        let txt = "Ok";
+        return Some(format!("HTTP/1.1 {} {}\r\n", status_code, txt));
 
-        None
     }
 
     /// Creates a new HTTP response.
     /// An HTTP response has the following format:
-    /// 
+    ///
     /// HTTP/1.1 200 OK -> Response line
     /// --------------- -> Response header
     /// --------------- -> Response header
     /// --------------- -> Response header
     ///                 -> Blank line
     /// <html><h1>Response body</h1></html>
-    /// 
+    ///
     /// Note that the \r\n characters are line break characters. They are present
     /// at the end of every line in an HTTP response except on the body.
     fn create_response(&self, _data: Option<String>) -> Option<String>{
