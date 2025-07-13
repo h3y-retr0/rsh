@@ -267,12 +267,12 @@ mod tests {
         assert_eq!(req.request_line.uri, "/uri");
         assert_eq!(req.request_line.http_version, "HTTP/1.1");
 
-        // cabeceras
+        // headers
         assert_eq!(
             req.headers.0.get("Host").map(String::as_str),
             Some(" mockhost:2020")
         );
-        // sin cuerpo
+        // empty body
         assert!(req.body.is_none());
     }
 
