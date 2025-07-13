@@ -3,16 +3,16 @@ use once_cell::sync::Lazy;
 
 #[derive(Debug, Clone)]
 pub struct HTTPRequest {
-    request_line: RequestLine,
-    headers: HTTPHeaders,
-    body: Option<String>,
+    pub request_line: RequestLine,
+    pub headers: HTTPHeaders,
+    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct RequestLine {
-    method: Method,
-    uri: String,
-    http_version: String,
+    pub method: String,
+    pub uri: String,
+    pub http_version: String,
 }
 
 #[derive(Debug, Clone)]
@@ -59,11 +59,10 @@ impl FromStr for RequestLine {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut iterator = s.split(' ');
-        let method: Method = iterator
+        let method: String = iterator
             .next()
             .ok_or("Failed to get HTTP method")?
-            
-            .parse()?;
+            .to_string();
         let uri = iterator
             .next()
             .ok_or("Failed to get requet uri")?
@@ -211,7 +210,7 @@ impl FromStr for StatusLine {
     }
 }
 #[derive(Debug, Clone)]
-struct HTTPResponse {
+pub struct HTTPResponse {
     status_line: StatusLine,
     headers: HTTPHeaders,
     body: Option<String>,
@@ -262,8 +261,7 @@ mod tests {
         ]);
 
         let req = HTTPRequest::try_from(reader).expect("parsing GET");
-
-        assert!(matches!(req.request_line.method, Method::GET));
+        assert_eq!(req.request_line.method, String::from("GET"));
         assert_eq!(req.request_line.uri, "/uri");
         assert_eq!(req.request_line.http_version, "HTTP/1.1");
 
@@ -290,7 +288,7 @@ mod tests {
 
         let req = HTTPRequest::try_from(reader).expect("parsing POST");
 
-        assert!(matches!(req.request_line.method, Method::POST));
+        assert_eq!(req.request_line.method, String::from("POST"));
         assert_eq!(req.body.as_deref(), Some(body));
     }
 

@@ -3,7 +3,9 @@ use std::io::{BufRead, BufReader, Cursor, Read, Write};
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
 
-use crate::parser::HTTPRequest;
+use crate::db::Storage;
+use crate::parser::{HTTPRequest, HTTPResponse};
+
 
 
 pub(crate) struct Config {
@@ -11,6 +13,8 @@ pub(crate) struct Config {
     pub host: IpAddr,
     /// The port to bind to.
     pub port: u16,
+    /// The file storage we are using.
+    pub storage: Storage,
 }
 
 pub(crate) struct Server {
@@ -58,10 +62,13 @@ impl Server {
         Server { config }
     }
 
-    pub fn run(&self) -> Result<(), std::io::Error> {
+    pub fn run(&mut self) -> Result<(), std::io::Error> {
         let addr = SocketAddr::from((self.config.host, self.config.port));
         let listener = TcpListener::bind(addr)?;
+            
 
+        self.config.storage.start_db().expect("Error while trying to connect to mysql instance");
+        println!("DB Connected");
         println!("Server listening on http://{}", addr);
 
         for stream in listener.incoming() {
@@ -75,7 +82,7 @@ impl Server {
     }
  
 
-    fn handle_conection(&self, mut stream: TcpStream) {
+    fn handle_conection(&mut self, mut stream: TcpStream) {
         println!("New connection -> {:?}", stream);
 
         let unparsed_http_request: Vec<String> = BufReader::new(&stream)
@@ -84,16 +91,14 @@ impl Server {
             .take_while(|line| !line.is_empty())
             .collect();
         
-        println!("{:?}", unparsed_http_request);
         // TODO: Refactor `parser` to use Vec<T> instead of BufRead<T>.
         let cur = Cursor::new(unparsed_http_request.join("\r\n").into_bytes());
 
         let reader = BufReader::new(cur);
         
         let req = HTTPRequest::try_from(reader).unwrap();
-        println!("{:?}", req);
 
-        if let Some(response) = self.create_response(None) {
+        if let Some(response) = self.create_response(req) {
             if let Err(e) = stream.write_all(response.as_bytes()) {
                 eprintln!("Error writing to TCP Socket: {}", e);
                 return;
@@ -122,7 +127,13 @@ impl Server {
     ///
     /// Note that the \r\n characters are line break characters. They are present
     /// at the end of every line in an HTTP response except on the body.
-    fn create_response(&self, _data: Option<String>) -> Option<String>{
+    fn create_response(&mut self, request: HTTPRequest) -> Option<String>{
+        println!("{:?}", request);
+        let method = request.request_line.method;
+        let uri = request.request_line.uri;
+
+        let content = self.config.storage.find(method, uri).unwrap();
+    
         let s_code = 200;
         let line = self.response_line(s_code);
         let status_line = if line.is_some() {
@@ -131,7 +142,7 @@ impl Server {
             format!("HTTP/1.1 {} {}\r\n", 500, "Internal Server Error")
         };
 
-        let body = "<html><body><h1>Request received!</h1></body></html>";
+        let body = content;
 
         let headers = format!(
             concat!(
