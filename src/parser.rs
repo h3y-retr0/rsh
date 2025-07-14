@@ -16,7 +16,7 @@ pub struct RequestLine {
 }
 
 #[derive(Debug, Clone)]
-struct HTTPHeaders(HashMap<String, String>);
+pub struct HTTPHeaders(HashMap<String, String>);
 
 #[derive(Debug, Clone)]
 pub enum Method {
@@ -30,17 +30,6 @@ pub enum Method {
     TRACE,
 }
 
-// Better way to do this?
-static HTTP_STATUS_CODE: Lazy<HashMap<u16, &'static str>> = Lazy::new(|| {
-    HashMap::from([
-        (100, "Continue"),
-        (200, "Ok"),
-        (400, "Bad Request"),
-        (401, "Unauthorized"),
-        (404, "Not Found"),
-        (500, "Internal Server Error"),
-    ])
-});
 
 /// An HTPP Request has the following structure we need to handle:
 /// METHOD uri HTTP_VERSION -> Request line
@@ -63,6 +52,9 @@ impl FromStr for RequestLine {
             .next()
             .ok_or("Failed to get HTTP method")?
             .to_string();
+        if Method::from_str(&method).is_err() {
+            return Err("Invalid HTTP method".to_string());
+        }
         let uri = iterator
             .next()
             .ok_or("Failed to get requet uri")?
@@ -162,7 +154,7 @@ impl<R: Read> TryFrom<BufReader<R>> for HTTPRequest {
 
 
 #[derive(Debug, Clone)]
-struct StatusCode(u16);
+struct StatusCode(pub u16);
 
 impl FromStr for StatusCode {
     type Err = String;
@@ -177,9 +169,9 @@ impl FromStr for StatusCode {
 #[derive(Debug, Clone)]
 struct StatusLine {
     // TODO: wrap http_version on a tuple struct HttpVersion(String)
-    http_version: String,
-    status_code: StatusCode,
-    status_data: String,
+    pub http_version: String,
+    pub status_code: StatusCode,
+    pub status_data: String,
 }
 
 impl FromStr for StatusLine {
@@ -191,19 +183,16 @@ impl FromStr for StatusLine {
         let http_version = iterator
             .next()
             .ok_or("Failed to get HTTP version")?
-            
             .to_string();
 
         let status_code = iterator
             .next()
             .ok_or("Failed to get status code")?
-            
             .parse()?;
 
         let status_data = iterator
             .next()
             .ok_or("Failed to get status data")?
-            
             .to_string();
 
         Ok(StatusLine { http_version, status_code, status_data })
@@ -211,9 +200,9 @@ impl FromStr for StatusLine {
 }
 #[derive(Debug, Clone)]
 pub struct HTTPResponse {
-    status_line: StatusLine,
-    headers: HTTPHeaders,
-    body: Option<String>,
+    pub status_line: StatusLine,
+    pub  headers: HTTPHeaders,
+    pub body: Option<String>,
 }
 
 impl<R: Read> TryFrom<BufReader<R>> for HTTPResponse {

@@ -2,16 +2,11 @@ use mysql::{*, prelude::*};
 use std::env;
 use dotenv::dotenv;
 
-use crate::parser::Method;
-
 pub struct Storage {
     conn: PooledConn,
 }
 
-pub struct Data {
-    method: Method,
-    content: String,
-}
+pub type StorageResult<T> = Result<T, mysql::Error>;
 
 impl Storage {
     pub fn new() -> Self {
@@ -42,14 +37,14 @@ impl Storage {
         Ok(())
     }
 
-    pub fn find(&mut self, method: String, uri: String) -> Option<String> {
-
-        let tuple = self.conn.exec_first(
+    
+    /// Finds and returns the content as [`StorageResult`] from the file 
+    /// on the provided `uri`.
+    pub fn find(&mut self, method: String, uri: String) -> StorageResult<Option<String>> {
+        self.conn.exec_first(
             "SELECT content FROM resources WHERE method = ? AND path = ?", 
             (method, uri),
-        ).unwrap_or(None);
-
-        tuple
+        )
     }
 }
 
